@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                script {
+                    docker.build("shahabuddinkhann/simple-app:build-${BUILD_NUMBER}")
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                script {
+                    // Simple test - check if container runs
+                    docker.image("shahabuddinkhann/simple-app:build-${BUILD_NUMBER}").run('--name test-container -d')
+                    sleep 10
+                    def result = sh(script: 'docker logs test-container', returnStdout: true).trim()
+                    echo "Container output: ${result}"
+                    sh 'docker stop test-container'
+                    sh 'docker rm test-container'
+                }
+            }
+        }
+        
+        stage('Push to Docker Hub') {
+            steps {
+                echo 'Pushing image to Docker Hub...'
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
+                        docker.image("shahabuddinkhann/simple-app:build-${BUILD_NUMBER}").push()
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Cleaning up...'
+            sh 'docker system prune -f || true'
+        }
+        success {
+            echo 'Pipeline succeeded! 🎉'
+        }
+        failure {
+            echo 'Pipeline failed! 😞'
+        }
+    }
+}
